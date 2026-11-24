@@ -31,13 +31,6 @@ app.use(express.urlencoded({ extended: true }));
 // Serve uploaded images (fallback if local uploads exist)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Routes
-app.use('/api/auth', require('./routes/auth'));
-app.use('/api/complaints', require('./routes/complaints'));
-app.use('/api/analytics', require('./routes/analytics'));
-
-app.get('/', (req, res) => res.json({ message: 'CivicVision API running' }));
-
 // Cached MongoDB connection for serverless / Vercel execution
 let isConnected = false;
 const connectDB = async () => {
@@ -46,7 +39,10 @@ const connectDB = async () => {
     return;
   }
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
+    await mongoose.connect(process.env.MONGODB_URI, {
+      bufferCommands: false, // Disable Mongoose buffering so failures fail fast or wait for connection
+      serverSelectionTimeoutMS: 10000,
+    });
     isConnected = true;
     console.log('MongoDB connected');
   } catch (err) {
@@ -61,9 +57,14 @@ app.use(async (req, res, next) => {
     await connectDB();
     next();
   } catch (err) {
-    res.status(500).json({ message: 'Database connection failed' });
+    res.status(500).json({ message: 'Database connection failed: ' + err.message });
   }
 });
+
+// Routes (placed AFTER connectDB middleware)
+app.use('/api/auth', require('./routes/auth'));
+app.use('/api/complaints', require('./routes/complaints'));
+app.use('/api/analytics', require('./routes/analytics'));
 
 // If running in traditional Node.js process (Render, Railway, local)
 if (process.env.NODE_ENV !== 'production' || !process.env.VERCEL) {
