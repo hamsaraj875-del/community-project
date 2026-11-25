@@ -18,7 +18,16 @@ import {
   Send,
   Building,
   ShieldAlert,
+  Sparkles,
+  ShieldCheck,
+  ShieldX,
+  AlertTriangle,
+  Trash2,
+  Edit3,
+  X,
+  Check,
 } from 'lucide-react';
+import AIVerificationBadge from '../components/AIVerificationBadge';
 
 const statusColor = {
   Received: 'badge-received',
@@ -42,6 +51,12 @@ export default function ComplaintDetails() {
   const [updating, setUpdating] = useState(false);
   const [newStatus, setNewStatus] = useState('');
   const [newRemark, setNewRemark] = useState('');
+  const [manualReviewStatus, setManualReviewStatus] = useState('');
+  const [manualReviewReason, setManualReviewReason] = useState('');
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editForm, setEditForm] = useState({ title: '', description: '', address: '' });
+  const [deleting, setDeleting] = useState(false);
 
   const fetchComplaint = async () => {
     try {
@@ -49,6 +64,13 @@ export default function ComplaintDetails() {
       const res = await API.get(`/complaints/${id}`);
       setComplaint(res.data);
       setNewStatus(res.data.status);
+      setManualReviewStatus(res.data.manualReviewStatus || 'none');
+      setManualReviewReason(res.data.manualReviewReason || '');
+      setEditForm({
+        title: res.data.title,
+        description: res.data.description,
+        address: res.data.address,
+      });
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to load complaint details');
       navigate(-1);
@@ -61,18 +83,53 @@ export default function ComplaintDetails() {
     fetchComplaint();
   }, [id]);
 
+  const handleCitizenSave = async (e) => {
+    e.preventDefault();
+    try {
+      setUpdating(true);
+      const res = await API.put(`/complaints/${id}`, editForm);
+      setComplaint(res.data);
+      setIsEditing(false);
+      toast.success('Complaint details updated successfully!');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update complaint details');
+    } finally {
+      setUpdating(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm('Are you sure you want to delete this complaint? This cannot be undone.')) {
+      return;
+    }
+    try {
+      setDeleting(true);
+      await API.delete(`/complaints/${id}`);
+      toast.success('Complaint deleted successfully');
+      navigate(isAuthority ? '/authority/complaints' : '/citizen/my-complaints');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete complaint');
+      setDeleting(false);
+    }
+  };
+
   const handleUpdate = async (e) => {
     e.preventDefault();
     if (!newStatus) return;
     try {
       setUpdating(true);
-      const res = await API.patch(`/complaints/${id}`, {
+      const payload = {
         status: newStatus,
         remark: newRemark,
-      });
+      };
+      if (manualReviewStatus && manualReviewStatus !== 'none') {
+        payload.manualReviewStatus = manualReviewStatus;
+        payload.manualReviewReason = manualReviewReason;
+      }
+      const res = await API.patch(`/complaints/${id}`, payload);
       setComplaint(res.data);
       setNewRemark('');
-      toast.success('Complaint status and remark updated successfully!');
+      toast.success('Complaint and review status updated successfully!');
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update complaint');
     } finally {
@@ -92,12 +149,15 @@ export default function ComplaintDetails() {
   if (!complaint) return null;
 
   const isAuthority = user?.role === 'authority';
+  const isOwner = complaint?.citizen?._id === user?._id || complaint?.citizen === user?._id;
+  const canEdit = isOwner && complaint?.status !== 'Resolved';
+  const canDelete = isOwner || isAuthority;
   const imgUrl = getImageUrl(complaint.image);
 
   return (
     <div className="container" style={{ paddingBottom: '60px' }}>
       {/* Top Navigation */}
-      <div style={{ margin: '20px 0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <div style={{ margin: '20px 0 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '12px' }}>
         <button
           onClick={() => navigate(isAuthority ? '/authority/complaints' : '/citizen/my-complaints')}
           className="btn btn-outline"
@@ -105,9 +165,41 @@ export default function ComplaintDetails() {
         >
           <ArrowLeft size={16} /> Back to Complaints
         </button>
-        <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 600 }}>
-          ID: #{complaint._id.toUpperCase()}
-        </span>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {canEdit && !isEditing && (
+            <button
+              onClick={() => setIsEditing(true)}
+              className="btn btn-outline"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+            >
+              <Edit3 size={14} /> Edit Complaint
+            </button>
+          )}
+
+          {canDelete && (
+            <button
+              onClick={handleDelete}
+              disabled={deleting}
+              className="btn"
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: '6px',
+                fontSize: '13px',
+                background: '#fee2e2',
+                color: '#b91c1c',
+                border: '1px solid #fecaca',
+              }}
+            >
+              <Trash2 size={14} /> {deleting ? 'Deleting...' : 'Delete Complaint'}
+            </button>
+          )}
+
+          <span style={{ fontSize: '13px', color: 'var(--text-muted)', fontWeight: 600 }}>
+            ID: #{complaint._id.slice(-6).toUpperCase()}
+          </span>
+        </div>
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1.8fr) minmax(320px, 1.2fr)', gap: '24px', alignItems: 'start' }}>
@@ -148,39 +240,145 @@ export default function ComplaintDetails() {
 
             {/* Header Content */}
             <div style={{ padding: '24px' }}>
-              <h1 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '12px', color: 'var(--text)' }}>
-                {complaint.title}
-              </h1>
-
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', paddingBottom: '18px', borderBottom: '1px solid var(--border)', fontSize: '13.5px', color: 'var(--text-muted)' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <MapPin size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
-                  <strong style={{ color: 'var(--text)' }}>{complaint.area}</strong>, Bengaluru
-                </div>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                  <Calendar size={15} style={{ flexShrink: 0 }} />
-                  <span>Reported on {new Date(complaint.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
-                </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '10px', flexWrap: 'wrap', gap: '8px' }}>
+                <AIVerificationBadge status={complaint.verificationStatus} score={complaint.verificationScore} showScore={true} />
+                {complaint.manualReviewStatus && complaint.manualReviewStatus !== 'none' && (
+                  <span
+                    className="tag"
+                    style={{
+                      fontSize: '12px',
+                      padding: '4px 10px',
+                      background: complaint.manualReviewStatus === 'approved' ? '#dcfce7' : '#fee2e2',
+                      color: complaint.manualReviewStatus === 'approved' ? '#166534' : '#991b1b',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {complaint.manualReviewStatus === 'approved' ? '✓ Human Authority Approved' : '✗ Human Rejected as False Complaint'}
+                  </span>
+                )}
               </div>
 
-              {/* Problem Description */}
-              <div style={{ marginTop: '20px' }}>
-                <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
-                  Problem Description
-                </h3>
-                <p style={{ fontSize: '15px', lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
-                  {complaint.description}
-                </p>
-              </div>
+              {/* Title & Edit Section */}
+              {isEditing ? (
+                <form onSubmit={handleCitizenSave} style={{ display: 'flex', flexDirection: 'column', gap: '14px', marginBottom: '18px' }}>
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600 }}>Title *</label>
+                    <input
+                      type="text"
+                      value={editForm.title}
+                      onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                      required
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                    />
+                  </div>
 
-              {/* Specific Street Address */}
-              <div style={{ marginTop: '20px', background: 'var(--bg)', padding: '14px 18px', borderRadius: '10px', border: '1px solid var(--border)' }}>
-                <strong style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
-                  Exact Location / Landmark
-                </strong>
-                <p style={{ margin: 0, fontSize: '14px', color: 'var(--text)', fontWeight: 500 }}>
-                  {complaint.address}
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600 }}>Description *</label>
+                    <textarea
+                      rows={4}
+                      value={editForm.description}
+                      onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                      required
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)', fontSize: '13.5px' }}
+                    />
+                  </div>
+
+                  <div className="form-group" style={{ margin: 0 }}>
+                    <label style={{ fontSize: '13px', fontWeight: 600 }}>Landmark / Exact Address *</label>
+                    <input
+                      type="text"
+                      value={editForm.address}
+                      onChange={(e) => setEditForm({ ...editForm, address: e.target.value })}
+                      required
+                      style={{ width: '100%', padding: '10px 12px', borderRadius: '8px', border: '1px solid var(--border)' }}
+                    />
+                  </div>
+
+                  <div style={{ display: 'flex', gap: '10px', marginTop: '6px' }}>
+                    <button
+                      type="submit"
+                      disabled={updating}
+                      className="btn btn-primary"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                    >
+                      <Check size={14} /> {updating ? 'Saving...' : 'Save Changes'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditing(false)}
+                      className="btn btn-outline"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px' }}
+                    >
+                      <X size={14} /> Cancel
+                    </button>
+                  </div>
+                </form>
+              ) : (
+                <>
+                  <h1 style={{ fontSize: '24px', fontWeight: 800, marginBottom: '12px', color: 'var(--text)' }}>
+                    {complaint.title}
+                  </h1>
+
+                  <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', paddingBottom: '18px', borderBottom: '1px solid var(--border)', fontSize: '13.5px', color: 'var(--text-muted)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <MapPin size={15} style={{ color: 'var(--primary)', flexShrink: 0 }} />
+                      <strong style={{ color: 'var(--text)' }}>{complaint.area}</strong>, Bengaluru
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      <Calendar size={15} style={{ flexShrink: 0 }} />
+                      <span>Reported on {new Date(complaint.createdAt).toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' })}</span>
+                    </div>
+                  </div>
+
+                  {/* Problem Description */}
+                  <div style={{ marginTop: '20px' }}>
+                    <h3 style={{ fontSize: '15px', fontWeight: 700, marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '0.5px', color: 'var(--text-muted)' }}>
+                      Problem Description
+                    </h3>
+                    <p style={{ fontSize: '15px', lineHeight: 1.7, color: 'var(--text)', whiteSpace: 'pre-wrap' }}>
+                      {complaint.description}
+                    </p>
+                  </div>
+
+                  {/* Specific Street Address */}
+                  <div style={{ marginTop: '20px', background: 'var(--bg)', padding: '14px 18px', borderRadius: '10px', border: '1px solid var(--border)' }}>
+                    <strong style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '4px' }}>
+                      Exact Location / Landmark
+                    </strong>
+                    <p style={{ margin: 0, fontSize: '14px', color: 'var(--text)', fontWeight: 500 }}>
+                      {complaint.address}
+                    </p>
+                  </div>
+                </>
+              )}
+
+              {/* AI Verification Assessment Card */}
+              <div style={{
+                marginTop: '20px',
+                padding: '16px 18px',
+                borderRadius: '10px',
+                border: '1px solid var(--border)',
+                background: complaint.verificationStatus === 'matched' ? '#f0fdf4' :
+                            complaint.verificationStatus === 'mismatch_detected' ? '#fef2f2' : '#fffbeb',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <Sparkles size={16} style={{ color: complaint.verificationStatus === 'matched' ? '#15803d' : '#b91c1c' }} />
+                    <strong style={{ fontSize: '13px', textTransform: 'uppercase', color: 'var(--text)' }}>
+                      AI Image-Category Verification
+                    </strong>
+                  </div>
+                  <AIVerificationBadge status={complaint.verificationStatus} score={complaint.verificationScore} showScore={true} />
+                </div>
+                <p style={{ margin: 0, fontSize: '13.5px', color: 'var(--text)', lineHeight: 1.5 }}>
+                  {complaint.verificationReason || 'No AI verification reason recorded.'}
                 </p>
+                {complaint.manualReviewStatus && complaint.manualReviewStatus !== 'none' && (
+                  <div style={{ marginTop: '10px', paddingTop: '10px', borderTop: '1px dashed var(--border)', fontSize: '12.5px' }}>
+                    <strong>Administrative Review:</strong> {complaint.manualReviewStatus === 'approved' ? 'Manually Approved' : 'Rejected'} by authority.
+                    {complaint.manualReviewReason && <span> Reason: "{complaint.manualReviewReason}"</span>}
+                  </div>
+                )}
               </div>
 
               {imgUrl && (
@@ -257,6 +455,31 @@ export default function ComplaintDetails() {
                     <option value="In Progress">In Progress</option>
                     <option value="Resolved">Resolved</option>
                   </select>
+                </div>
+
+                {/* Authority Manual Verification & Integrity Override */}
+                <div style={{ padding: '14px', background: 'var(--bg)', borderRadius: '8px', border: '1px solid var(--border)' }}>
+                  <label style={{ fontSize: '13px', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '8px' }}>
+                    <ShieldAlert size={15} style={{ color: 'var(--primary)' }} />
+                    Human Verification & Audit Override
+                  </label>
+                  <select
+                    value={manualReviewStatus}
+                    onChange={(e) => setManualReviewStatus(e.target.value)}
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '13px', marginBottom: '8px' }}
+                  >
+                    <option value="none">No Manual Override (Default AI status)</option>
+                    <option value="approved">✓ Manually Approve Complaint (Genuine Issue)</option>
+                    <option value="rejected">✗ Reject as False / Invalid Complaint</option>
+                  </select>
+
+                  <input
+                    type="text"
+                    value={manualReviewReason}
+                    onChange={(e) => setManualReviewReason(e.target.value)}
+                    placeholder="Audit reason (e.g. Verified genuine via field inspection / Spam image)..."
+                    style={{ width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid var(--border)', fontSize: '12.5px' }}
+                  />
                 </div>
 
                 <div className="form-group" style={{ margin: 0 }}>

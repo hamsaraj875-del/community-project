@@ -24,6 +24,26 @@ const complaintSchema = new mongoose.Schema({
   },
   citizen: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   remarks: [remarkSchema],
+
+  // AI Verification Fields
+  verificationStatus: {
+    type: String,
+    enum: ['pending', 'matched', 'mismatch_detected', 'needs_review', 'verification_failed'],
+    default: 'pending',
+  },
+  verificationScore: { type: Number, default: null },
+  verificationReason: { type: String, default: null },
+  verifiedAt: { type: Date, default: null },
+
+  // Manual Authority Review Fields
+  manualReviewStatus: {
+    type: String,
+    enum: ['none', 'approved', 'rejected'],
+    default: 'none',
+  },
+  manualReviewReason: { type: String, default: null },
+  manualReviewedBy: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+  manualReviewedAt: { type: Date, default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('Complaint', complaintSchema);

@@ -1,5 +1,6 @@
 const Complaint = require('../models/Complaint');
 const cloudinary = require('../config/cloudinary');
+const { verifyComplaintImage } = require('../services/aiVerificationService');
 
 // Helper to stream upload buffer to Cloudinary
 const uploadToCloudinary = (fileBuffer) => {
@@ -41,6 +42,30 @@ const createComplaint = async (req, res) => {
       return res.status(500).json({ message: 'Failed to upload image to Cloudinary: ' + (uploadErr.message || 'Unknown error') });
     }
 
+    // AI-Powered Verification of Complaint Image
+    let aiVerification = {
+      verificationStatus: 'pending',
+      verificationScore: null,
+      verificationReason: null,
+      verifiedAt: null,
+    };
+
+    try {
+      aiVerification = await verifyComplaintImage(
+        req.file.buffer,
+        req.file.originalname,
+        req.file.mimetype,
+        category,
+        title,
+        description
+      );
+    } catch (aiErr) {
+      console.warn('AI Verification failed or timed out:', aiErr.message);
+      aiVerification.verificationStatus = 'verification_failed';
+      aiVerification.verificationReason = 'AI verification service offline. Queued for manual authority review.';
+      aiVerification.verifiedAt = new Date();
+    }
+
     const complaint = await Complaint.create({
       title,
       description,
@@ -49,6 +74,10 @@ const createComplaint = async (req, res) => {
       address,
       image: imageUrl,
       citizen: req.user._id,
+      verificationStatus: aiVerification.verificationStatus,
+      verificationScore: aiVerification.verificationScore,
+      verificationReason: aiVerification.verificationReason,
+      verifiedAt: aiVerification.verifiedAt,
     });
 
     await complaint.populate('citizen', 'name email phone');
@@ -73,10 +102,11 @@ const getMyComplaints = async (req, res) => {
 // Get all complaints with filters (authority)
 const getAllComplaints = async (req, res) => {
   try {
-    const { status, category, area, search, page = 1, limit = 20 } = req.query;
+    const { status, category, area, verificationStatus, search, page = 1, limit = 20 } = req.query;
     const filter = {};
     if (status) filter.status = status;
     if (category) filter.category = category;
+    if (verificationStatus) filter.verificationStatus = verificationStatus;
     if (area) filter.area = new RegExp(area, 'i');
     if (search) {
       filter.$or = [
@@ -90,26 +120,38 @@ const getAllComplaints = async (req, res) => {
       .sort({ createdAt: -1 })
       .skip((page - 1) * limit)
       .limit(Number(limit))
-      .populate('citizen', 'name email phone');
+      .populate('citizen', 'name email phone')
+      .populate('manualReviewedBy', 'name');
     res.json({ complaints, total, page: Number(page), pages: Math.ceil(total / limit) });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
 };
 
-// Update status and add remark (authority)
+// Update status, manual review and add remark (authority)
 const updateComplaint = async (req, res) => {
   try {
-    const { status, remark } = req.body;
+    const { status, remark, manualReviewStatus, manualReviewReason } = req.body;
     const complaint = await Complaint.findById(req.params.id);
     if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
+    
     if (status) complaint.status = status;
+    
+    // Handle manual review decision override (Approved or Rejected by Authority)
+    if (manualReviewStatus) {
+      complaint.manualReviewStatus = manualReviewStatus;
+      complaint.manualReviewReason = manualReviewReason || null;
+      complaint.manualReviewedBy = req.user._id;
+      complaint.manualReviewedAt = new Date();
+    }
+
     if (remark && remark.trim()) {
       complaint.remarks.push({ text: remark.trim(), addedBy: req.user._id });
     }
     await complaint.save();
     await complaint.populate('citizen', 'name email phone');
     await complaint.populate('remarks.addedBy', 'name');
+    await complaint.populate('manualReviewedBy', 'name');
     res.json(complaint);
   } catch (err) {
     res.status(500).json({ message: err.message });
@@ -121,12 +163,58 @@ const getComplaintById = async (req, res) => {
   try {
     const complaint = await Complaint.findById(req.params.id)
       .populate('citizen', 'name email phone')
-      .populate('remarks.addedBy', 'name');
+      .populate('remarks.addedBy', 'name')
+      .populate('manualReviewedBy', 'name');
     if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
     if (req.user.role === 'citizen' && complaint.citizen._id.toString() !== req.user._id.toString()) {
       return res.status(403).json({ message: 'Access denied' });
     }
     res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Update complaint details by citizen owner (title, description, address)
+const updateCitizenComplaint = async (req, res) => {
+  try {
+    const { title, description, address } = req.body;
+    const complaint = await Complaint.findById(req.params.id);
+    if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
+
+    if (complaint.citizen.toString() !== req.user._id.toString()) {
+      return res.status(403).json({ message: 'Not authorized to edit this complaint' });
+    }
+
+    if (title) complaint.title = title.trim();
+    if (description) complaint.description = description.trim();
+    if (address) complaint.address = address.trim();
+
+    await complaint.save();
+    await complaint.populate('citizen', 'name email phone');
+    await complaint.populate('remarks.addedBy', 'name');
+    await complaint.populate('manualReviewedBy', 'name');
+    res.json(complaint);
+  } catch (err) {
+    res.status(500).json({ message: err.message });
+  }
+};
+
+// Delete complaint (allowed by citizen owner or authority)
+const deleteComplaint = async (req, res) => {
+  try {
+    const complaint = await Complaint.findById(req.params.id);
+    if (!complaint) return res.status(404).json({ message: 'Complaint not found' });
+
+    const isOwner = complaint.citizen.toString() === req.user._id.toString();
+    const isAuthority = req.user.role === 'authority';
+
+    if (!isOwner && !isAuthority) {
+      return res.status(403).json({ message: 'Not authorized to delete this complaint' });
+    }
+
+    await Complaint.findByIdAndDelete(req.params.id);
+    res.json({ message: 'Complaint deleted successfully', id: req.params.id });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
@@ -138,4 +226,6 @@ module.exports = {
   getAllComplaints,
   updateComplaint,
   getComplaintById,
+  updateCitizenComplaint,
+  deleteComplaint,
 };

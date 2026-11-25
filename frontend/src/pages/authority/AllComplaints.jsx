@@ -4,8 +4,9 @@ import API, { getImageUrl } from '../../api/axios';
 import toast from 'react-hot-toast';
 import {
   Search, X, MapPin, Calendar, User,
-  MessageSquare, Image as ImageIcon, ArrowRight
+  MessageSquare, Image as ImageIcon, ArrowRight, Sparkles, Check, AlertOctagon
 } from 'lucide-react';
+import AIVerificationBadge from '../../components/AIVerificationBadge';
 
 const statusColor = {
   'Received': 'status-received',
@@ -32,7 +33,7 @@ export default function AllComplaints() {
   const [complaints, setComplaints] = useState([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
-  const [filters, setFilters] = useState({ search: '', status: '', category: '', area: '' });
+  const [filters, setFilters] = useState({ search: '', status: '', category: '', area: '', verificationStatus: '' });
   const [page, setPage] = useState(1);
   const [pages, setPages] = useState(1);
 
@@ -109,6 +110,17 @@ export default function AllComplaints() {
             </option>
           ))}
         </select>
+        <select
+          value={filters.verificationStatus}
+          onChange={(e) => handleFilterChange('verificationStatus', e.target.value)}
+          style={{ fontWeight: filters.verificationStatus ? 600 : 400 }}
+        >
+          <option value="">All AI Verification</option>
+          <option value="matched">🟢 Matched Only</option>
+          <option value="mismatch_detected">🔴 Mismatch Detected</option>
+          <option value="needs_review">🟡 Needs Review</option>
+          <option value="pending">⚪ Pending Verification</option>
+        </select>
         <input
           placeholder="Filter by locality/area..."
           value={filters.area}
@@ -175,8 +187,35 @@ export default function AllComplaints() {
 
                     {/* Card Body */}
                     <div className="card-content">
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', gap: '8px' }}>
+                        <AIVerificationBadge status={c.verificationStatus} score={c.verificationScore} showScore={true} />
+                        {c.manualReviewStatus && c.manualReviewStatus !== 'none' && (
+                          <span
+                            className="tag"
+                            style={{
+                              fontSize: '11px',
+                              padding: '2px 6px',
+                              background: c.manualReviewStatus === 'approved' ? '#dcfce7' : '#fee2e2',
+                              color: c.manualReviewStatus === 'approved' ? '#166534' : '#991b1b',
+                              fontWeight: 700,
+                            }}
+                          >
+                            {c.manualReviewStatus === 'approved' ? '✓ Human Approved' : '✗ Human Rejected'}
+                          </span>
+                        )}
+                      </div>
+
                       <h3 className="card-title" title={c.title}>{c.title}</h3>
                       <p className="card-desc">{c.description}</p>
+
+                      {c.verificationReason && (
+                        <div className={`ai-reason-box ${
+                          c.verificationStatus === 'matched' ? 'ai-reason-matched' :
+                          c.verificationStatus === 'mismatch_detected' ? 'ai-reason-mismatch' : 'ai-reason-review'
+                        }`}>
+                          <strong>AI Insight:</strong> {c.verificationReason}
+                        </div>
+                      )}
 
                       <div className="card-meta-list">
                         <div className="card-meta-item">

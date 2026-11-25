@@ -47,6 +47,7 @@ export default function App() {
             <Route path="/citizen" element={<PrivateRoute role="citizen"><CitizenDashboard /></PrivateRoute>} />
             <Route path="/citizen/report" element={<PrivateRoute role="citizen"><ReportComplaint /></PrivateRoute>} />
             <Route path="/citizen/my-complaints" element={<PrivateRoute role="citizen"><MyComplaints /></PrivateRoute>} />
+            <Route path="/citizen/complaints/:id" element={<PrivateRoute role="citizen"><ComplaintDetails /></PrivateRoute>} />
 
             {/* Authority routes */}
             <Route path="/authority" element={<PrivateRoute role="authority"><AuthorityDashboard /></PrivateRoute>} />

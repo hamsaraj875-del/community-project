@@ -7,6 +7,8 @@ const {
   getAllComplaints,
   updateComplaint,
   getComplaintById,
+  updateCitizenComplaint,
+  deleteComplaint,
 } = require('../controllers/complaintController');
 
 const router = express.Router();
@@ -44,6 +46,8 @@ const handleUpload = (req, res, next) => {
 // --- CITIZEN ROUTES ---
 router.post('/', auth, handleUpload, createComplaint);
 router.get('/my', auth, getMyComplaints);
+router.put('/:id', auth, updateCitizenComplaint);
+router.delete('/:id', auth, deleteComplaint);
 
 // --- AUTHORITY ROUTES ---
 router.get('/all', auth, authorityOnly, getAllComplaints);

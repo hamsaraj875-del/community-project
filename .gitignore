@@ -1,0 +1,13 @@
+# Python virtual environments
+venv/
+.venv/
+ai-service/venv/
+ai-service/.venv/
+
+# Python cache
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Model cache
+.cache/

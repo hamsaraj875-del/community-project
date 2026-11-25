@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import API, { getImageUrl } from '../../api/axios';
-import { FileText, ChevronDown, ChevronUp, MapPin, Calendar, MessageSquare, ExternalLink, Image as ImageIcon } from 'lucide-react';
+import { FileText, MapPin, Calendar, MessageSquare, ArrowRight } from 'lucide-react';
+import AIVerificationBadge from '../../components/AIVerificationBadge';
 
 const statusColor = {
   'Received': 'status-received',
@@ -9,9 +11,9 @@ const statusColor = {
 };
 
 export default function MyComplaints() {
+  const navigate = useNavigate();
   const [complaints, setComplaints] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [expandedId, setExpandedId] = useState(null);
 
   useEffect(() => {
     API.get('/complaints/my')
@@ -19,10 +21,6 @@ export default function MyComplaints() {
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
-
-  const toggleExpand = (id) => {
-    setExpandedId(prev => prev === id ? null : id);
-  };
 
   return (
     <div className="page">
@@ -44,7 +42,6 @@ export default function MyComplaints() {
         <div className="complaints-grid">
           {complaints.map((c) => {
             const imgUrl = getImageUrl(c.image);
-            const isExpanded = expandedId === c._id;
 
             return (
               <div key={c._id} className="complaint-card-shape">
@@ -62,7 +59,6 @@ export default function MyComplaints() {
                     />
                   ) : (
                     <div className="card-image-placeholder">
-                      <ImageIcon size={28} />
                       <span>No photo</span>
                     </div>
                   )}
@@ -82,8 +78,35 @@ export default function MyComplaints() {
 
                 {/* Card Main Body */}
                 <div className="card-content">
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <AIVerificationBadge status={c.verificationStatus} score={c.verificationScore} showScore={false} />
+                    {c.manualReviewStatus && c.manualReviewStatus !== 'none' && (
+                      <span
+                        className="tag"
+                        style={{
+                          fontSize: '11px',
+                          padding: '2px 6px',
+                          background: c.manualReviewStatus === 'approved' ? '#dcfce7' : '#fee2e2',
+                          color: c.manualReviewStatus === 'approved' ? '#166534' : '#991b1b',
+                          fontWeight: 700,
+                        }}
+                      >
+                        {c.manualReviewStatus === 'approved' ? '✓ Authority Confirmed' : '✗ Marked False'}
+                      </span>
+                    )}
+                  </div>
+
                   <h3 className="card-title" title={c.title}>{c.title}</h3>
                   <p className="card-desc">{c.description}</p>
+
+                  {c.verificationReason && (
+                    <div className={`ai-reason-box ${
+                      c.verificationStatus === 'matched' ? 'ai-reason-matched' :
+                      c.verificationStatus === 'mismatch_detected' ? 'ai-reason-mismatch' : 'ai-reason-review'
+                    }`}>
+                      <strong>AI Verification:</strong> {c.verificationReason}
+                    </div>
+                  )}
 
                   <div className="card-meta-list">
                     <div className="card-meta-item">
@@ -110,61 +133,13 @@ export default function MyComplaints() {
                     ID: #{c._id.slice(-6).toUpperCase()}
                   </span>
                   <button
-                    onClick={() => toggleExpand(c._id)}
-                    className="btn btn-outline"
-                    style={{ fontSize: '13px', padding: '6px 12px' }}
+                    onClick={() => navigate(`/citizen/complaints/${c._id}`)}
+                    className="btn btn-primary"
+                    style={{ fontSize: '13px', padding: '6px 14px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                   >
-                    {isExpanded ? (
-                      <>Hide <ChevronUp size={15} /></>
-                    ) : (
-                      <>Details <ChevronDown size={15} /></>
-                    )}
+                    View Details & Edit <ArrowRight size={14} />
                   </button>
                 </div>
-
-                {/* Expandable Details Drawer */}
-                {isExpanded && (
-                  <div className="card-detail-drawer">
-                    <div>
-                      <strong style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Full Description</strong>
-                      <p style={{ marginTop: '4px', fontSize: '13.5px', color: 'var(--text)' }}>{c.description}</p>
-                    </div>
-
-                    <div>
-                      <strong style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase' }}>Exact Location</strong>
-                      <p style={{ marginTop: '4px', fontSize: '13.5px', color: 'var(--text)' }}>{c.address}, {c.area}</p>
-                    </div>
-
-                    {imgUrl && (
-                      <div>
-                        <strong style={{ fontSize: '12px', color: 'var(--text-muted)', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                          Uploaded Problem Photo
-                        </strong>
-                        <a
-                          href={imgUrl}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="btn btn-outline"
-                          style={{ fontSize: '12px', padding: '5px 10px', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-                        >
-                          <ExternalLink size={13} /> View Full Photo in Cloudinary
-                        </a>
-                      </div>
-                    )}
-
-                    {c.remarks?.length > 0 && (
-                      <div className="remarks" style={{ marginTop: '6px' }}>
-                        <strong>Authority Remarks ({c.remarks.length})</strong>
-                        {c.remarks.map((r, i) => (
-                          <div key={i} className="remark-item">
-                            <p>{r.text}</p>
-                            <small>{new Date(r.addedAt).toLocaleDateString('en-IN')}</small>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
             );
           })}
